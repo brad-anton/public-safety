@@ -1,0 +1,165 @@
+diff -urN compat-wireless-3.3-1/drivers/net/wireless/ath/ath5k/attach.c compat-wireless-3.3-1-BRAD/drivers/net/wireless/ath/ath5k/attach.c
+--- compat-wireless-3.3-1/drivers/net/wireless/ath/ath5k/attach.c	2012-03-28 02:02:37.000000000 -0400
++++ compat-wireless-3.3-1-BRAD/drivers/net/wireless/ath/ath5k/attach.c	2012-06-30 13:20:30.261797454 -0400
+@@ -19,13 +19,18 @@
+ /*************************************\
+ * Attach/Detach Functions and helpers *
+ \*************************************/
+-
++#include <linux/module.h>
+ #include <linux/pci.h>
+ #include <linux/slab.h>
+ #include "ath5k.h"
+ #include "reg.h"
+ #include "debug.h"
+ 
++
++static unsigned int ath5k_default_bwmode = AR5K_BWMODE_DEFAULT;
++module_param_named(default_bwmode, ath5k_default_bwmode, uint, 0);
++MODULE_PARM_DESC(default_bwmode, "Set default bandwidth mode - [ 1=5MHz 2=10MHz 3=40MHz ]\n\t\t20MHz is default");
++
+ /**
+  * ath5k_hw_post() - Power On Self Test helper function
+  * @ah: The &struct ath5k_hw
+@@ -111,7 +116,11 @@
+ 	/*
+ 	 * HW information
+ 	 */
++	/* BRAD 
+ 	ah->ah_bwmode = AR5K_BWMODE_DEFAULT;
++	*/ 
++	printk("Setting bandwidth: %u\n",  ath5k_default_bwmode);
++	ah->ah_bwmode = ath5k_default_bwmode;
+ 	ah->ah_txpower.txp_tpc = AR5K_TUNE_TPC_TXPOWER;
+ 	ah->ah_imr = 0;
+ 	ah->ah_retry_short = AR5K_INIT_RETRY_SHORT;
+diff -urN compat-wireless-3.3-1/drivers/net/wireless/ath/ath5k/base.c compat-wireless-3.3-1-BRAD/drivers/net/wireless/ath/ath5k/base.c
+--- compat-wireless-3.3-1/drivers/net/wireless/ath/ath5k/base.c	2012-03-28 02:02:37.000000000 -0400
++++ compat-wireless-3.3-1-BRAD/drivers/net/wireless/ath/ath5k/base.c	2012-06-30 13:20:30.265797747 -0400
+@@ -272,7 +272,8 @@
+ 		/* 802.11j 5.030-5.080 GHz (20MHz) */
+ 		(chan == 8 || chan == 12 || chan == 16) ||
+ 		/* 802.11j 4.9GHz (20MHz) */
+-		(chan == 184 || chan == 188 || chan == 192 || chan == 196));
++                /* BRAD: Opening up a little more */
++                (chan >= 182 && chan <= 198 ));
+ }
+ 
+ static unsigned int
+@@ -304,15 +305,33 @@
+ 
+ 		if (freq == 0) /* mapping failed - not a standard channel */
+ 			continue;
+-
+ 		/* Write channel info, needed for ath5k_channel_ok() */
+ 		channels[count].center_freq = freq;
+ 		channels[count].band = band;
+ 		channels[count].hw_value = mode;
+ 
++		/* BRAD: This should set the bwmode for desired_bw_khz in reg.c */
++		switch(ah->ah_bwmode) {
++		case AR5K_BWMODE_40MHZ:
++			channels[count].target_bw = 40;
++			break;
++		case AR5K_BWMODE_10MHZ:
++			channels[count].target_bw = 10;
++			break;
++		case AR5K_BWMODE_5MHZ:
++			channels[count].target_bw = 5;
++			break;
++		default:
++			channels[count].target_bw = 20;
++			break;
++		}	
++
+ 		/* Check if channel is supported by the chipset */
+-		if (!ath5k_channel_ok(ah, &channels[count]))
++		if (!ath5k_channel_ok(ah, &channels[count])) {
++			printk("Channel NOT OK: %d  %d\n", ch, channels[count].center_freq);
+ 			continue;
++		}
++
+ 
+ 		if (!modparam_all_channels &&
+ 		    !ath5k_is_standard_channel(ch, band))
+diff -urN compat-wireless-3.3-1/drivers/net/wireless/ath/regd.c compat-wireless-3.3-1-BRAD/drivers/net/wireless/ath/regd.c
+--- compat-wireless-3.3-1/drivers/net/wireless/ath/regd.c	2012-03-28 02:02:37.000000000 -0400
++++ compat-wireless-3.3-1-BRAD/drivers/net/wireless/ath/regd.c	2012-06-30 13:20:30.265797747 -0400
+@@ -164,8 +164,18 @@
+ 
+ bool ath_is_49ghz_allowed(u16 regdomain)
+ {
+-	/* possibly more */
+-	return regdomain == MKK9_MKKC;
++       /* BRAD: I'm just returning FCC4_FCCA here so that   
++        * caps->cap_range.range_5ghz_min = 4920 is set 
++        * in caps.c 
++        * you can also just return true 
++        */
++
++       //return regdomain == MKK9_MKKC;
++
++       //return regdomain == FCC4_FCCA;
++
++       return true;
++
+ }
+ EXPORT_SYMBOL(ath_is_49ghz_allowed);
+ 
+diff -urN compat-wireless-3.3-1/include/net/cfg80211.h compat-wireless-3.3-1-BRAD/include/net/cfg80211.h
+--- compat-wireless-3.3-1/include/net/cfg80211.h	2012-03-28 02:02:38.000000000 -0400
++++ compat-wireless-3.3-1-BRAD/include/net/cfg80211.h	2012-06-30 13:20:30.269798012 -0400
+@@ -136,6 +136,7 @@
+ 	bool beacon_found;
+ 	u32 orig_flags;
+ 	int orig_mag, orig_mpwr;
++	uint target_bw;
+ };
+ 
+ /**
+diff -urN compat-wireless-3.3-1/net/wireless/reg.c compat-wireless-3.3-1-BRAD/net/wireless/reg.c
+--- compat-wireless-3.3-1/net/wireless/reg.c	2012-03-28 02:02:37.000000000 -0400
++++ compat-wireless-3.3-1-BRAD/net/wireless/reg.c	2012-06-30 13:21:31.270103042 -0400
+@@ -825,6 +825,7 @@
+ 	sband = wiphy->bands[band];
+ 	BUG_ON(chan_idx >= sband->n_channels);
+ 	chan = &sband->channels[chan_idx];
++        desired_bw_khz = MHZ_TO_KHZ(chan->target_bw);
+ 
+ 	flags = chan->orig_flags;
+ 
+@@ -848,7 +849,7 @@
+ 		    r == -ERANGE)
+ 			return;
+ 
+-		REG_DBG_PRINT("Disabling freq %d MHz\n", chan->center_freq);
++		REG_DBG_PRINT("Disabling freq %d MHz @ %d MHz bandwidth\n", chan->center_freq, KHZ_TO_MHZ(desired_bw_khz));
+ 		chan->flags = IEEE80211_CHAN_DISABLED;
+ 		return;
+ 	}
+@@ -1221,6 +1222,8 @@
+ 	BUG_ON(chan_idx >= sband->n_channels);
+ 	chan = &sband->channels[chan_idx];
+ 
++	desired_bw_khz = MHZ_TO_KHZ(chan->target_bw);
++
+ 	r = freq_reg_info_regd(wiphy,
+ 			       MHZ_TO_KHZ(chan->center_freq),
+ 			       desired_bw_khz,
+diff -urN compat-wireless-3.3-1/scripts/update-initramfs compat-wireless-3.3-1-BRAD/scripts/update-initramfs
+--- compat-wireless-3.3-1/scripts/update-initramfs	2012-03-20 22:27:13.000000000 -0400
++++ compat-wireless-3.3-1-BRAD/scripts/update-initramfs	2012-06-30 13:20:30.273798249 -0400
+@@ -17,9 +17,11 @@
+ case $LSB_RED_ID in
+ "Ubuntu")
+ 	echo "Updating Ubuntu's initramfs for $ver under $dir ..."
+-	mkinitramfs -o $dir/initrd.img-$ver $ver
++	# BRAD: Commenting this out because i'm not rebooting in BT
++	# mkinitramfs -o $dir/initrd.img-$ver $ver
+ 	echo "Will now run update-grub to ensure grub will find the new initramfs ..."
+-	update-grub
++	# BRAD: Commenting this out because it breaks on BT5R1
++	# update-grub
+ 	;;
+ *)
+ 	echo "Warning:"
