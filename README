@@ -3,8 +3,42 @@ by brad antoniewicz (brad.antoniewicz@foundstone.com)
 blog.opensecurityresearch.com
 -------------------------------------------------------
 
-THIS REPO REPO IS NO LONGER UPDATED!!!! SEE FOR UPDATES
+These are various patches to work with Public Safety Bands.
+It may include 4.9ghz, 700mhz or others.. 
 
-http://github.com/OpenSecurityResearch/public-safety
+4.9ghz/compat-wireless-3.3-1_ath5k-49GHZ+BWMODE.patch
 
+	This enables the ath5k drivers to respect 4.9ghz
+	and various channel widths. It leverages some 
+	of the code used in the other various patches 
+	mentioned in the references below. 
 
+	to install, just download compat-wireless-3.3-1
+	and patch -p1 < patch. See 49ghz_install.sh for more 
+	info
+
+	Invoke with "modprobe ath5k default_bwmode=2"
+	for 10mhz channel widths. See modinfo ath5k 
+	for more info. 
+
+4.9ghz/db-ReturnTrue.txt  
+
+	Just the channel definitions to be used with CRDA.
+
+4.9ghz/kismet-ReturnTrue.conf
+
+	Kismet configuration to work with the patch above
+
+4.9ghz/49ghz_install.sh
+
+	This is a script that is used in a private bundle. 
+	it may be useful to see what needs to be run to
+	get everything working. This WILL not work on its
+	own.
+
+ 
+References:
+--------------------
+
+http://patches.aircrack-ng.org/ath5k-frequency-chaos_2.6.26.2.patch
+http://wiki.spench.net/wiki/RADAR 
